@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>삼월 만세 전야 — 1인 플레이 검증판 v8</title>
+<title>삼월 만세 전야 — 1인 플레이 검증판 v9</title>
 <style>
 :root{
   --ink:#1F1C18; --muted:#6A6259; --faint:#A79E92; --hair:#DDD6CB;
@@ -101,7 +101,7 @@ button.acc{background:var(--acc);color:#fff;border-color:var(--acc)}
 <header>
   <span class="hanja">三月萬歲前夜</span>
   <h1>삼월 만세 전야</h1>
-  <span class="ver">1인 플레이 검증판 v8 · 룰 v5.3</span>
+  <span class="ver">1인 플레이 검증판 v9 · 룰 v5.3</span>
 </header>
 
 <div class="bar">
@@ -173,10 +173,16 @@ function defs(numberCap){
 }
 
 /* ───────── 상태 ───────── */
-function newState(pc, aggr){
+function aggrText(){
+  const a = [];
+  for(let i=1;i<S.pc;i++) a.push(`${NAMES[i]} ${AGGR[S.aggrs[i]].label}(${AGGR[S.aggrs[i]].w})`);
+  return a.join(" · ");
+}
+
+function newState(pc, aggrs){
   const three = (pc === 3);
   const st = {
-    pc, aggr,
+    pc, aggrs: aggrs.slice(),
     dicePer: three ? 13 : 11,
     rounds:  three ? 5  : 4,
     numberCap: three ? 4 : 5,
@@ -281,9 +287,10 @@ function standings(){                                   // 동점 → 물꼬 수
 }
 
 /* ───────── 진행 ───────── */
-function startGame(pc, aggr){
-  S = newState(pc, aggr);
-  S.log.push({t:"h", s:`${pc}인 게임 시작 · ${S.rounds}라운드 · 주사위 ${S.dicePer}개 · 숫자 칸 ${S.numberCap}자리 · AI ${AGGR[aggr].label}`});
+function startGame(pc, aggrs){
+  S = newState(pc, aggrs);
+  S.log.push({t:"h", s:`${pc}인 게임 시작 · ${S.rounds}라운드 · 주사위 ${S.dicePer}개 · 숫자 칸 ${S.numberCap}자리`});
+  S.log.push({t:"h", s:`컴퓨터 성향 — ${aggrText()}`});
   startRound();
 }
 
@@ -434,7 +441,7 @@ function evalMove(p, v, catId){
   if(cat.dice.length + 1 >= cat.def.cap) s += P.fin;   // 마무리 가산
   let opp = 0;
   for(let q=0;q<S.pc;q++) if(q!==p) opp += (after[q] - before[q]);
-  s -= opp * AGGR[S.aggr].w;                      // 견제 성향
+  s -= opp * AGGR[S.aggrs[p]].w;                  // 놓는 사람의 견제 성향
   s += Math.random() * P.noise;
   return s;
 }
@@ -538,7 +545,7 @@ function render(){
       const mini = S.rolls[i].map(d=>`<div class="mini${d.used?" used":""}">${d.v}</div>`).join("");
       pl.push(`<div class="prow${now?" now":""}">
         <span class="pdot" style="background:${COLORS[i]}"></span>
-        <span class="pname">${NAMES[i]}</span>
+        <span class="pname">${NAMES[i]}<br><span style="font-weight:400;color:var(--faint);font-size:10px">${AGGR[S.aggrs[i]].label}</span></span>
         <span class="pmini">${mini}</span></div>`);
     }
   }
@@ -602,32 +609,51 @@ function openModal(html){
 }
 function closeModal(){ document.getElementById("overlay").classList.remove("show"); render(); }
 
-let pick = {pc:4, aggr:1};
-function setupModal(){
-  openModal(`
+let pick = {pc:4, aggrs:[1,1,1,1,1]};
+
+function setupHtml(){
+  const rows = [];
+  for(let i=1;i<pick.pc;i++){
+    const btns = [0,1,2].map(v =>
+      `<button data-v="${v}" class="${pick.aggrs[i]===v?"on":""}">${AGGR[v].label}</button>`).join("");
+    rows.push(`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <span class="pdot" style="background:${COLORS[i]}"></span>
+      <span style="font-size:12px;font-weight:700;width:52px;flex:none">${NAMES[i]}</span>
+      <span class="opt" style="margin:0;flex:1" data-ai="${i}">${btns}</span></div>`);
+  }
+  return `
     <h2>삼월 만세 전야</h2>
-    <p class="sub">1인 플레이 검증판 v8 — 룰 v5.3 기준. 나머지 자리는 컴퓨터가 맡습니다.</p>
+    <p class="sub">1인 플레이 검증판 v9 — 룰 v5.3 기준. 나머지 자리는 컴퓨터가 맡습니다.</p>
     <div><b style="font-size:13px">인원</b></div>
     <div class="opt" id="optPc">
-      <button data-v="3">3인</button><button data-v="4">4인</button><button data-v="5">5인</button>
+      ${[3,4,5].map(v=>`<button data-v="${v}" class="${pick.pc===v?"on":""}">${v}인</button>`).join("")}
     </div>
-    <div><b style="font-size:13px">컴퓨터 성향</b></div>
-    <div class="opt" id="optAg">
-      <button data-v="0">소극적</button><button data-v="1">균형</button><button data-v="2">공격적</button>
+    <div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap">
+      <b style="font-size:13px;margin-right:4px">컴퓨터 성향</b>
+      <button style="font-size:11px;padding:2px 8px" onclick="presetAll(0)">전원 소극</button>
+      <button style="font-size:11px;padding:2px 8px" onclick="presetAll(1)">전원 균형</button>
+      <button style="font-size:11px;padding:2px 8px" onclick="presetAll(2)">전원 공격</button>
+      <button style="font-size:11px;padding:2px 8px" onclick="presetMix()">섞기</button>
     </div>
-    <p class="note">성향은 상대의 이득을 얼마나 깎으려 드는지를 조절합니다. 공격적으로 둘수록 남의 칸을 망가뜨리는 배치를 자주 고릅니다.<br>
-    3인은 주사위 13개 · 5라운드 · 숫자 칸 4자리, 4 - 5인은 11개 · 4라운드 · 5자리로 진행됩니다.</p>
-    <button class="acc" style="width:100%;margin-top:8px" onclick="begin()">시작</button>`);
-  bindOpt("optPc","pc"); bindOpt("optAg","aggr");
+    <div style="margin:8px 0 12px">${rows.join("")}</div>
+    <p class="note">성향은 상대의 이득을 얼마나 깎으려 드는지를 조절합니다. 괄호 안이 실제 계수입니다 — 소극적 ${AGGR[0].w} · 균형 ${AGGR[1].w} · 공격적 ${AGGR[2].w}.<br>
+    3인은 주사위 13개 · 5라운드 · 숫자 칸 4자리, 4 - 5인은 11개 · 4라운드 · 숫자 칸 5자리로 진행됩니다.</p>
+    <button class="acc" style="width:100%" onclick="begin()">시작</button>`;
 }
-function bindOpt(id, key){
-  const box = document.getElementById(id);
-  const paint = () => box.querySelectorAll("button").forEach(b =>
-    b.classList.toggle("on", +b.dataset.v === pick[key]));
-  box.querySelectorAll("button").forEach(b => b.onclick = () => { pick[key] = +b.dataset.v; paint(); });
-  paint();
+function setupModal(){ openModal(setupHtml()); wireSetup(); }
+function refreshSetup(){ document.getElementById("modal").innerHTML = setupHtml(); wireSetup(); }
+function wireSetup(){
+  document.querySelectorAll("#optPc button").forEach(b =>
+    b.onclick = () => { pick.pc = +b.dataset.v; refreshSetup(); });
+  document.querySelectorAll("[data-ai] button").forEach(b =>
+    b.onclick = () => {
+      const i = +b.parentNode.dataset.ai;
+      pick.aggrs[i] = +b.dataset.v; refreshSetup();
+    });
 }
-function begin(){ closeModal(); startGame(pick.pc, pick.aggr); }
+function presetAll(v){ for(let i=1;i<5;i++) pick.aggrs[i] = v; refreshSetup(); }
+function presetMix(){ for(let i=1;i<5;i++) pick.aggrs[i] = (i-1) % 3; refreshSetup(); }
+function begin(){ closeModal(); startGame(pick.pc, pick.aggrs); }
 
 /* ───────── 로그 ───────── */
 function buildLog(){
@@ -637,8 +663,9 @@ function buildLog(){
   L.push("");
   L.push(`- 일시: ${new Date().toLocaleString("ko-KR")}`);
   L.push(`- 인원: ${S.pc}인 · ${S.rounds}라운드 · 주사위 ${S.dicePer}개 · 숫자 칸 ${S.numberCap}자리`);
-  L.push(`- 컴퓨터 성향: ${AGGR[S.aggr].label}`);
-  L.push(`- 검증판 v8 (룰 v5.3)`);
+  L.push(`- 컴퓨터 성향: ${aggrText()}`);
+  L.push(`- 견제 계수: 소극적 ${AGGR[0].w} · 균형 ${AGGR[1].w} · 공격적 ${AGGR[2].w}`);
+  L.push(`- 검증판 v9 (룰 v5.3)`);
   L.push("");
   L.push("## 최종 순위");
   L.push("");
