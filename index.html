@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>삼월 만세 전야 — 1인 플레이 검증판 v8</title>
+<style>
+:root{
+  --ink:#1F1C18; --muted:#6A6259; --faint:#A79E92; --hair:#DDD6CB;
+  --paper:#FBF9F5; --card:#FFFFFF; --band:#F3EFE8; --acc:#A8342A;
+  --sans:'Pretendard','Noto Sans KR','Apple SD Gothic Neo','Malgun Gothic',sans-serif;
+  --serif:'Nanum Myeongjo','Noto Serif KR','Batang',serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.6}
+.wrap{max-width:1180px;margin:0 auto;padding:16px 16px 60px}
+
+header{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;
+  border-bottom:1.5px solid var(--ink);padding-bottom:10px;margin-bottom:14px}
+header h1{font-family:var(--serif);font-size:22px;margin:0;letter-spacing:.03em}
+header .hanja{color:var(--acc);letter-spacing:.35em;font-family:var(--serif);font-size:11px}
+header .ver{color:var(--faint);font-size:12px;margin-left:auto}
+
+.bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;
+  background:var(--card);border:1px solid var(--hair);border-radius:8px;padding:10px 12px;margin-bottom:12px}
+.bar .pill{font-size:12px;color:var(--muted);background:var(--band);border-radius:99px;padding:3px 10px}
+.bar .grow{flex:1}
+button{font-family:inherit;font-size:13px;padding:6px 12px;border-radius:6px;
+  border:1px solid var(--hair);background:var(--card);color:var(--ink);cursor:pointer}
+button:hover:not(:disabled){border-color:var(--ink)}
+button:disabled{opacity:.4;cursor:default}
+button.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
+button.acc{background:var(--acc);color:#fff;border-color:var(--acc)}
+
+.cols{display:grid;grid-template-columns:1fr 330px;gap:14px;align-items:start}
+@media(max-width:940px){.cols{grid-template-columns:1fr}}
+
+.panel{background:var(--card);border:1px solid var(--hair);border-radius:8px;padding:12px}
+.panel h2{font-size:13px;margin:0 0 8px;letter-spacing:.04em;color:var(--acc);font-weight:700}
+
+/* 보드 */
+.row{display:grid;grid-template-columns:150px 1fr 78px;gap:8px;align-items:center;
+  border:1px solid var(--hair);border-radius:8px;padding:6px 8px;margin-bottom:5px;background:var(--card)}
+.row.sp{background:var(--band)}
+.row.done{border-color:var(--ink)}
+.row.pick{outline:2px solid var(--acc);outline-offset:1px;cursor:pointer}
+.rname{font-weight:700;font-size:13px}
+.rname small{display:block;font-weight:400;color:var(--muted);font-size:11px;line-height:1.35}
+.seats{display:flex;gap:5px;flex-wrap:wrap}
+.seat{width:34px;height:34px;border:1px solid var(--hair);border-radius:6px;background:#fff;
+  display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;position:relative}
+.seat.ghost{border-style:dashed;opacity:.5}
+.seat.water::before{content:"";position:absolute;top:2px;left:2px;width:6px;height:6px;
+  background:var(--acc);transform:rotate(45deg)}
+.seat.filled{color:#fff}
+.rsc{font-size:11px;color:var(--muted);text-align:right;line-height:1.4}
+.rsc b{color:var(--ink);font-size:12px}
+.tag{display:inline-block;font-size:10px;padding:1px 5px;border-radius:99px;background:var(--ink);color:#fff}
+.tag.fail{background:var(--faint)}
+
+/* 주사위 */
+.tray{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.die{width:40px;height:40px;border-radius:7px;border:1.5px solid var(--hair);background:#fff;
+  display:flex;align-items:center;justify-content:center;font-weight:700;font-size:18px;cursor:pointer}
+.die.sel{border-color:var(--acc);box-shadow:0 0 0 2px rgba(168,52,42,.2)}
+.die.used{opacity:.25;cursor:default}
+.die.dim{cursor:default}
+.plist{display:flex;flex-direction:column;gap:8px}
+.prow{display:flex;gap:8px;align-items:center;padding:6px;border-radius:6px}
+.prow.now{background:var(--band)}
+.pdot{width:12px;height:12px;border-radius:3px;flex:none}
+.pname{font-size:12px;font-weight:700;width:64px;flex:none}
+.pmini{display:flex;gap:3px;flex-wrap:wrap}
+.mini{width:22px;height:22px;border-radius:4px;border:1px solid var(--hair);background:#fff;
+  font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.mini.used{opacity:.22}
+
+#log{max-height:300px;overflow:auto;font-size:12px;line-height:1.65;color:var(--muted)}
+#log b{color:var(--ink)}
+.scoretable{width:100%;border-collapse:collapse;font-size:12px}
+.scoretable th,.scoretable td{border-bottom:1px solid var(--hair);padding:4px 6px;text-align:center}
+.scoretable th:first-child,.scoretable td:first-child{text-align:left}
+.scoretable tr.win td{font-weight:700;background:var(--band)}
+
+.overlay{position:fixed;inset:0;background:rgba(31,28,24,.55);display:none;
+  align-items:center;justify-content:center;padding:20px;z-index:50}
+.overlay.show{display:flex}
+.modal{background:var(--card);border-radius:10px;padding:20px;max-width:520px;width:100%;
+  max-height:88vh;overflow:auto}
+.modal h2{font-family:var(--serif);font-size:19px;margin:0 0 4px}
+.modal p.sub{color:var(--muted);font-size:12px;margin:0 0 14px}
+.opt{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 14px}
+.opt button{flex:1;min-width:76px}
+.opt button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.note{font-size:11px;color:var(--faint);margin-top:10px;line-height:1.6}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <span class="hanja">三月萬歲前夜</span>
+  <h1>삼월 만세 전야</h1>
+  <span class="ver">1인 플레이 검증판 v8 · 룰 v5.3</span>
+</header>
+
+<div class="bar">
+  <span class="pill" id="pRound">라운드 —</span>
+  <span class="pill" id="pStock">재고 —</span>
+  <span class="pill" id="pTurn">—</span>
+  <span class="grow"></span>
+  <button id="btnUndo">되돌리기</button>
+  <button id="btnPass">차례 넘기기</button>
+  <button id="btnNew">새 게임</button>
+</div>
+
+<div id="instruction" style="font-size:13px;color:var(--muted);margin-bottom:10px">—</div>
+
+<div class="cols">
+  <div>
+    <div id="board"></div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:12px">
+    <div class="panel">
+      <h2>이번 라운드 굴림</h2>
+      <div class="plist" id="players"></div>
+    </div>
+    <div class="panel">
+      <h2>진행 기록</h2>
+      <div id="log"></div>
+      <div style="margin-top:10px;display:flex;gap:6px">
+        <button id="btnLog" class="primary">로그 다운로드 (.md)</button>
+        <button id="btnCopy">복사</button>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="overlay show" id="overlay"><div class="modal" id="modal"></div></div>
+
+<script>
+
+"use strict";
+
+/* ───────── 설정 ───────── */
+const COLORS = ["#2F6F4F","#2F4C7A","#B0453A","#B8862B","#6B4A8A"];
+const NAMES  = ["나","이웃 ㄴ","이웃 ㄷ","이웃 ㄹ","이웃 ㅁ"];
+const SEQ4 = [[1,2,3,4],[2,3,4,5],[3,4,5,6]];
+const SEQ5 = [[1,2,3,4,5],[2,3,4,5,6]];
+const AGGR = {0:{label:"소극적",w:0.15},1:{label:"균형",w:0.55},2:{label:"공격적",w:1.05}};
+
+let S = null;
+let P = {k:0.40, water:0.5, fin:0.6, noise:0.15};   // AI 판단 계수
+
+function defs(numberCap){
+  const d = [];
+  for(let n=1;n<=6;n++)
+    d.push({id:"n"+n, kind:"num", v:n, name:"숫자 "+n, sub:n+"의 눈만",
+            cap:numberCap, together:2, rank:1, rankBy:"count"});
+  d.push({id:"pair", kind:"pair", name:"페어", sub:"「뜻을 같이한 이웃」",
+          cap:4, together:2, rank:1, rankBy:"pip"});
+  d.push({id:"triple", kind:"triple", name:"트리플", sub:"「골목의 무리」 같은 눈 3개",
+          cap:4, together:2, rank:1, rankBy:"count"});
+  d.push({id:"small", kind:"small", name:"스몰 스트레이트", sub:"「선언문 인쇄」 연속 4개",
+          cap:4, together:3, rank:0, rankBy:null});
+  d.push({id:"large", kind:"large", name:"라지 스트레이트", sub:"「선언문 배포」 연속 5개",
+          cap:5, together:3, rank:0, rankBy:null});
+  d.push({id:"yahtzee", kind:"yahtzee", name:"야찌", sub:"「만세의 함성」 같은 눈 5개",
+          cap:5, together:3, rank:2, rankBy:"count"});
+  return d;
+}
+
+/* ───────── 상태 ───────── */
+function newState(pc, aggr){
+  const three = (pc === 3);
+  const st = {
+    pc, aggr,
+    dicePer: three ? 13 : 11,
+    rounds:  three ? 5  : 4,
+    numberCap: three ? 4 : 5,
+    round: 0, start: 0, order: [], turnIdx: 0, current: 0,
+    stocks: Array(pc).fill(three ? 13 : 11),
+    rolls: [], cats: {}, defs: defs(three ? 4 : 5),
+    placed: [], selected: null, log: [], gameOver: false, seq: 0
+  };
+  st.defs.forEach(d => st.cats[d.id] = {def:d, dice:[], water:null});
+  return st;
+}
+
+/* ───────── 규칙 ───────── */
+function myVals(cat,p){ return cat.dice.filter(x=>x.p===p).map(x=>x.v); }
+function allVals(cat){ return cat.dice.map(x=>x.v); }
+
+function canPlace(p, v, catId, placed){
+  placed = placed || S.placed;
+  const cat = S.cats[catId], d = cat.def;
+  if(cat.dice.length >= d.cap) return false;
+  if(placed.length >= 2) return false;                 // 한 턴 2개
+  const same = placed.filter(x=>x.catId===catId).length;
+  const isStraight = (d.kind==="small"||d.kind==="large");
+  if(isStraight ? same>=1 : same>=2) return false;     // 한 칸 제한
+  if(d.kind==="num") return v === d.v;
+  if(isStraight){
+    const cur = allVals(cat);
+    if(cur.includes(v)) return false;
+    const test = cur.concat([v]).sort((a,b)=>a-b);
+    return (d.kind==="small"?SEQ4:SEQ5).some(s => test.every(x => s.includes(x)));
+  }
+  const own = myVals(cat,p);                            // 게임 전체 같은 눈 제약
+  return own.length===0 || own.every(x=>x===v);
+}
+
+function hasAnyMove(p, dice, placed){
+  return dice.some(die => !die.used &&
+    S.defs.some(d => canPlace(p, die.v, d.id, placed)));
+}
+
+function isComplete(cat){
+  const d = cat.def, n = cat.dice.length;
+  if(n < d.cap) return false;
+  if(d.kind==="pair")    return countMax(cat) >= 2 && somePlayerPair(cat);
+  if(d.kind==="triple")  return valueCount(cat) >= 3;
+  if(d.kind==="yahtzee") return valueCount(cat) >= 5;
+  return true;                                          // 숫자 · 스트레이트
+}
+function valueCount(cat){                               // 같은 눈 최다 개수
+  const m = {}; let best = 0;
+  cat.dice.forEach(x => { m[x.v]=(m[x.v]||0)+1; best=Math.max(best,m[x.v]); });
+  return best;
+}
+function somePlayerPair(cat){
+  for(let p=0;p<S.pc;p++){ const v=myVals(cat,p); if(v.length>=2) return true; }
+  return false;
+}
+function countMax(cat){ return valueCount(cat); }
+
+function contributors(cat){
+  const set = new Set(cat.dice.map(x=>x.p));
+  return [...set];
+}
+
+function rankWinner(cat){
+  const d = cat.def;
+  if(!d.rank || !d.rankBy) return -1;
+  const m = [];
+  for(let p=0;p<S.pc;p++){
+    const v = myVals(cat,p);
+    if(d.rankBy==="pip") m.push(v.length>=2 ? v[0] : -1);
+    else m.push(v.length);
+  }
+  const mx = Math.max(...m);
+  if(mx <= 0) return -1;
+  const w = m.map((x,i)=>x===mx?i:-1).filter(i=>i>=0);
+  return w.length===1 ? w[0] : -1;
+}
+
+function score(){
+  const out = [];
+  for(let p=0;p<S.pc;p++) out.push({p, fixed:0, water:0, together:0, rank:0, total:0});
+  S.defs.forEach(d=>{
+    const cat = S.cats[d.id];
+    cat.dice.forEach(x => out[x.p].fixed++);
+    if(cat.water !== null) out[cat.water].water++;
+    if(isComplete(cat)){
+      const c = contributors(cat);
+      if(c.length >= 2) c.forEach(p => out[p].together += d.together);
+      const w = rankWinner(cat);
+      if(w >= 0) out[w].rank += d.rank;
+    }
+  });
+  out.forEach(o => o.total = o.fixed + o.water + o.together + o.rank);
+  return out;
+}
+
+function standings(){                                   // 동점 → 물꼬 수
+  const sc = score().slice();
+  sc.sort((a,b) => b.total-a.total || b.water-a.water);
+  return sc;
+}
+
+/* ───────── 진행 ───────── */
+function startGame(pc, aggr){
+  S = newState(pc, aggr);
+  S.log.push({t:"h", s:`${pc}인 게임 시작 · ${S.rounds}라운드 · 주사위 ${S.dicePer}개 · 숫자 칸 ${S.numberCap}자리 · AI ${AGGR[aggr].label}`});
+  startRound();
+}
+
+function startRound(){
+  S.round++;
+  S.rolls = [];
+  for(let p=0;p<S.pc;p++){
+    const n = Math.min(5, S.stocks[p]), arr = [];
+    for(let i=0;i<n;i++) arr.push({id:"d"+(S.seq++), v:1+Math.floor(Math.random()*6), used:false});
+    arr.sort((a,b)=>a.v-b.v);
+    S.rolls.push(arr);
+  }
+  S.order = [];
+  for(let i=0;i<S.pc;i++) S.order.push((S.start+i)%S.pc);
+  S.turnIdx = 0;
+  S.log.push({t:"r", s:`${S.round}라운드 — 전원 동시 굴림 · 시작 ${NAMES[S.start]}`});
+  beginTurn();
+}
+
+function beginTurn(){
+  S.current = S.order[S.turnIdx];
+  S.placed = [];
+  S.selected = null;
+  render();
+  if(S.current !== 0) setTimeout(aiTurn, 420);
+}
+
+function endTurn(){
+  if(S.placed.length === 0)
+    S.log.push({t:"x", p:S.current, s:`${NAMES[S.current]} — 놓을 곳이 없어 배치하지 못함`});
+  S.turnIdx++;
+  if(S.turnIdx < S.pc) beginTurn();
+  else endRound();
+}
+
+function endRound(){
+  S.start = (S.start+1) % S.pc;
+  if(S.round >= S.rounds) finish();
+  else startRound();
+}
+
+function place(p, dieId, catId){
+  const die = S.rolls[p].find(d => d.id===dieId);
+  if(!die || die.used) return false;
+  if(!canPlace(p, die.v, catId)) return false;
+  const cat = S.cats[catId];
+  const first = cat.dice.length === 0;
+  cat.dice.push({p, v:die.v, ord:cat.dice.length});
+  if(first) cat.water = p;
+  die.used = true;
+  S.stocks[p]--;
+  S.placed.push({dieId, catId, v:die.v, first});
+  S.log.push({t:"p", p, s:`${NAMES[p]} → ${cat.def.name} 에 ${die.v}${first?" (물꼬)":""}`});
+  return true;
+}
+
+function undo(){
+  if(S.current !== 0 || !S.placed.length || S.gameOver) return;
+  const last = S.placed.pop();
+  const cat = S.cats[last.catId];
+  cat.dice.pop();
+  if(cat.dice.length === 0) cat.water = null;
+  const die = S.rolls[0].find(d => d.id===last.dieId);
+  if(die) die.used = false;
+  S.stocks[0]++;
+  for(let i=S.log.length-1;i>=0;i--){ if(S.log[i].t==="p"){ S.log.splice(i,1); break; } }
+  S.selected = null;
+  render();
+}
+
+function finish(){
+  S.gameOver = true;
+  S.log.push({t:"h", s:"게임 종료"});
+  render();
+  showResult();
+}
+
+/* ───────── AI ───────── */
+function feasible(cat){
+  const d = cat.def, left = d.cap - cat.dice.length;
+  if(left <= 0) return isComplete(cat);
+  if(d.kind==="triple")  return valueCount(cat) + left >= 3;
+  if(d.kind==="yahtzee"){
+    const vs = new Set(allVals(cat));
+    return vs.size <= 1;
+  }
+  if(d.kind==="pair"){
+    for(let p=0;p<S.pc;p++) if(myVals(cat,p).length>=1) return true;
+    return left >= 2;
+  }
+  return true;
+}
+
+function needLeft(cat){                       // 완성까지 남은 개수
+  const d = cat.def, left = d.cap - cat.dice.length;
+  if(left <= 0) return isComplete(cat) ? 0 : 99;
+  if(d.kind==="triple"){
+    const n = Math.max(0, 3 - valueCount(cat));
+    return n > left ? 99 : Math.max(n, 0);
+  }
+  if(d.kind==="yahtzee"){
+    if(new Set(allVals(cat)).size > 1) return 99;
+    return left;
+  }
+  if(d.kind==="pair"){
+    let best = 2;
+    for(let p=0;p<S.pc;p++){ const v=myVals(cat,p);
+      if(v.length>=2) best = 0; else if(v.length===1) best = Math.min(best,1); }
+    return best > left ? 99 : best;
+  }
+  return left;
+}
+
+function potential(cat, p){
+  const d = cat.def;
+  if(myVals(cat,p).length === 0) return 0;
+  if(cat.dice.length >= d.cap){
+    if(!isComplete(cat)) return 0;
+    let s = contributors(cat).length>=2 ? d.together : 0;
+    if(rankWinner(cat) === p) s += d.rank;
+    return s;
+  }
+  const need = needLeft(cat);
+  if(need >= 99) return 0;
+  const chance = Math.pow(P.k, need);
+  let share = d.together;
+  if(d.rank){
+    const m = [];
+    for(let q=0;q<S.pc;q++){ const v = myVals(cat,q);
+      m.push(d.rankBy==="pip" ? (v.length>=2?v[0]:-1) : v.length); }
+    const mx = Math.max(...m);
+    if(m[p]===mx && m.filter(x=>x===mx).length===1) share += d.rank;
+  }
+  return chance * share;
+}
+
+function evalMove(p, v, catId){
+  const cat = S.cats[catId];
+  const before = [], after = [];
+  for(let q=0;q<S.pc;q++) before.push(potential(cat,q));
+  cat.dice.push({p, v, ord:cat.dice.length});
+  for(let q=0;q<S.pc;q++) after.push(potential(cat,q));
+  cat.dice.pop();
+
+  let s = 1.0;                                    // 확정 점수 (확실한 +1)
+  if(cat.dice.length === 0) s += P.water;          // 물꼬 (확실한 +1)
+  s += (after[p] - before[p]) * 1.0;              // 내 이득
+  if(cat.dice.length + 1 >= cat.def.cap) s += P.fin;   // 마무리 가산
+  let opp = 0;
+  for(let q=0;q<S.pc;q++) if(q!==p) opp += (after[q] - before[q]);
+  s -= opp * AGGR[S.aggr].w;                      // 견제 성향
+  s += Math.random() * P.noise;
+  return s;
+}
+
+function aiTurn(){
+  if(S.gameOver) return;
+  const p = S.current;
+  for(let k=0;k<2;k++){
+    let best = null;
+    S.rolls[p].forEach(die => {
+      if(die.used) return;
+      S.defs.forEach(d => {
+        if(!canPlace(p, die.v, d.id)) return;
+        const sc = evalMove(p, die.v, d.id);
+        if(!best || sc > best.sc) best = {sc, dieId:die.id, catId:d.id};
+      });
+    });
+    if(!best) break;
+    place(p, best.dieId, best.catId);
+  }
+  render();
+  setTimeout(endTurn, 380);
+}
+
+/* ───────── 화면 ───────── */
+function catSummary(cat){
+  const d = cat.def;
+  if(cat.dice.length < d.cap) return "";
+  return isComplete(cat) ? '<span class="tag">완성</span>' : '<span class="tag fail">실패</span>';
+}
+
+function render(){
+  if(!S) return;
+  const human = S.current === 0 && !S.gameOver;
+
+  document.getElementById("pRound").textContent = `라운드 ${S.round} / ${S.rounds}`;
+  document.getElementById("pStock").textContent = `내 재고 ${S.stocks[0]}개`;
+  document.getElementById("pTurn").textContent  = S.gameOver ? "게임 종료" : `${NAMES[S.current]}의 차례`;
+
+  const canMove = human && hasAnyMove(0, S.rolls[0], S.placed);
+  document.getElementById("instruction").textContent = S.gameOver
+    ? "게임이 끝났습니다. 보드와 기록을 확인하고 로그를 내려받으세요."
+    : (human
+        ? (canMove ? `주사위를 고른 뒤 칸을 누르세요. ${S.placed.length}/2개 배치.`
+                   : "놓을 수 있는 칸이 없습니다. 차례 넘기기를 누르세요.")
+        : "다른 사람이 놓는 중입니다…");
+  document.getElementById("btnUndo").disabled = !human || S.placed.length===0;
+  document.getElementById("btnPass").disabled = !human;
+
+  /* 보드 */
+  const bd = [];
+  S.defs.forEach(d => {
+    const cat = S.cats[d.id];
+    const sel = S.selected;
+    const pickable = human && sel!==null &&
+      canPlace(0, S.rolls[0].find(x=>x.id===sel).v, d.id);
+    const cls = ["row"];
+    if(d.kind!=="num") cls.push("sp");
+    if(cat.dice.length>=d.cap) cls.push("done");
+    if(pickable) cls.push("pick");
+
+    const seats = [];
+    for(let i=0;i<d.cap;i++){
+      const die = cat.dice[i];
+      const water = (i===0) ? " water" : "";
+      if(die) seats.push(`<div class="seat filled${water}" style="background:${COLORS[die.p]};border-color:${COLORS[die.p]}">${die.v}</div>`);
+      else{
+        const ghost = (d.kind==="num" && i===4 && S.numberCap===4) ? " ghost" : "";
+        seats.push(`<div class="seat${water}${ghost}"></div>`);
+      }
+    }
+    const rank = d.rank ? `으뜸 <b>+${d.rank}</b>` : "으뜸 없음";
+    bd.push(`<div class="${cls.join(" ")}" data-cat="${d.id}">
+      <div class="rname">${d.name} ${catSummary(cat)}<small>${d.sub}</small></div>
+      <div class="seats">${seats.join("")}</div>
+      <div class="rsc">함께 <b>+${d.together}</b><br>${rank}</div>
+    </div>`);
+  });
+  document.getElementById("board").innerHTML = bd.join("");
+  document.querySelectorAll(".row").forEach(el =>
+    el.onclick = () => catClick(el.dataset.cat));
+
+  /* 굴림 패널 */
+  const pl = [];
+  for(let i=0;i<S.pc;i++){
+    const p = S.order.length ? S.order[(S.turnIdx)%S.pc] : 0;
+    const now = (!S.gameOver && i===S.current);
+    if(i===0){
+      const dice = S.rolls[0].map(d=>{
+        const c = ["die"];
+        if(d.used) c.push("used");
+        else if(!human) c.push("dim");
+        if(S.selected===d.id) c.push("sel");
+        return `<div class="${c.join(" ")}" data-die="${d.id}">${d.v}</div>`;
+      }).join("");
+      pl.push(`<div class="prow${now?" now":""}">
+        <span class="pdot" style="background:${COLORS[0]}"></span>
+        <span class="pname">${NAMES[0]}</span></div>
+        <div class="tray">${dice}</div>`);
+    }else{
+      const mini = S.rolls[i].map(d=>`<div class="mini${d.used?" used":""}">${d.v}</div>`).join("");
+      pl.push(`<div class="prow${now?" now":""}">
+        <span class="pdot" style="background:${COLORS[i]}"></span>
+        <span class="pname">${NAMES[i]}</span>
+        <span class="pmini">${mini}</span></div>`);
+    }
+  }
+  document.getElementById("players").innerHTML = pl.join("");
+  document.querySelectorAll("[data-die]").forEach(el =>
+    el.onclick = () => dieClick(el.dataset.die));
+
+  /* 기록 */
+  document.getElementById("log").innerHTML = S.log.map(e=>{
+    if(e.t==="h") return `<div style="margin:6px 0 3px"><b>${e.s}</b></div>`;
+    if(e.t==="r") return `<div style="margin:6px 0 3px;color:#A8342A"><b>${e.s}</b></div>`;
+    if(e.t==="x") return `<div style="opacity:.7">· ${e.s}</div>`;
+    return `<div>· ${e.s}</div>`;
+  }).join("");
+  const lg = document.getElementById("log"); lg.scrollTop = lg.scrollHeight;
+}
+
+function dieClick(id){
+  if(S.current!==0 || S.gameOver) return;
+  const d = S.rolls[0].find(x=>x.id===id);
+  if(!d || d.used) return;
+  S.selected = (S.selected===id) ? null : id;
+  render();
+}
+
+function catClick(catId){
+  if(S.current!==0 || S.gameOver || S.selected===null) return;
+  if(S.placed.length >= 2) return;
+  if(place(0, S.selected, catId)){
+    S.selected = null;
+    render();
+    if(S.placed.length >= 2) setTimeout(endTurn, 320);
+  }
+}
+
+/* ───────── 결과 ───────── */
+function showResult(){
+  const st = standings();
+  const rows = st.map((o,i)=>`<tr class="${i===0?"win":""}">
+    <td><span class="pdot" style="background:${COLORS[o.p]};display:inline-block;margin-right:5px"></span>${NAMES[o.p]}</td>
+    <td>${o.fixed}</td><td>${o.water}</td><td>${o.together}</td><td>${o.rank}</td><td>${o.total}</td></tr>`).join("");
+  const tie = st.length>1 && st[0].total===st[1].total;
+  openModal(`
+    <h2>게임 종료</h2>
+    <p class="sub">${S.rounds}라운드가 모두 끝났습니다.</p>
+    <table class="scoretable">
+      <tr><th>플레이어</th><th>확정</th><th>물꼬</th><th>함께</th><th>으뜸</th><th>총점</th></tr>
+      ${rows}
+    </table>
+    ${tie?`<p class="note">총점 동점 — 물꼬 수로 <b>${NAMES[st[0].p]}</b> 승리</p>`:""}
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="primary" onclick="downloadLog()">로그 다운로드</button>
+      <button onclick="closeModal()">보드 보기</button>
+      <button onclick="setupModal()">새 게임</button>
+    </div>`);
+}
+
+function openModal(html){
+  document.getElementById("modal").innerHTML = html;
+  document.getElementById("overlay").classList.add("show");
+}
+function closeModal(){ document.getElementById("overlay").classList.remove("show"); render(); }
+
+let pick = {pc:4, aggr:1};
+function setupModal(){
+  openModal(`
+    <h2>삼월 만세 전야</h2>
+    <p class="sub">1인 플레이 검증판 v8 — 룰 v5.3 기준. 나머지 자리는 컴퓨터가 맡습니다.</p>
+    <div><b style="font-size:13px">인원</b></div>
+    <div class="opt" id="optPc">
+      <button data-v="3">3인</button><button data-v="4">4인</button><button data-v="5">5인</button>
+    </div>
+    <div><b style="font-size:13px">컴퓨터 성향</b></div>
+    <div class="opt" id="optAg">
+      <button data-v="0">소극적</button><button data-v="1">균형</button><button data-v="2">공격적</button>
+    </div>
+    <p class="note">성향은 상대의 이득을 얼마나 깎으려 드는지를 조절합니다. 공격적으로 둘수록 남의 칸을 망가뜨리는 배치를 자주 고릅니다.<br>
+    3인은 주사위 13개 · 5라운드 · 숫자 칸 4자리, 4 - 5인은 11개 · 4라운드 · 5자리로 진행됩니다.</p>
+    <button class="acc" style="width:100%;margin-top:8px" onclick="begin()">시작</button>`);
+  bindOpt("optPc","pc"); bindOpt("optAg","aggr");
+}
+function bindOpt(id, key){
+  const box = document.getElementById(id);
+  const paint = () => box.querySelectorAll("button").forEach(b =>
+    b.classList.toggle("on", +b.dataset.v === pick[key]));
+  box.querySelectorAll("button").forEach(b => b.onclick = () => { pick[key] = +b.dataset.v; paint(); });
+  paint();
+}
+function begin(){ closeModal(); startGame(pick.pc, pick.aggr); }
+
+/* ───────── 로그 ───────── */
+function buildLog(){
+  const st = standings();
+  const L = [];
+  L.push("# 삼월 만세 전야 — 플레이 로그");
+  L.push("");
+  L.push(`- 일시: ${new Date().toLocaleString("ko-KR")}`);
+  L.push(`- 인원: ${S.pc}인 · ${S.rounds}라운드 · 주사위 ${S.dicePer}개 · 숫자 칸 ${S.numberCap}자리`);
+  L.push(`- 컴퓨터 성향: ${AGGR[S.aggr].label}`);
+  L.push(`- 검증판 v8 (룰 v5.3)`);
+  L.push("");
+  L.push("## 최종 순위");
+  L.push("");
+  L.push("|순위|플레이어|확정|물꼬|함께|으뜸|총점|");
+  L.push("|---|---|---|---|---|---|---|");
+  st.forEach((o,i) => L.push(`|${i+1}|${NAMES[o.p]}|${o.fixed}|${o.water}|${o.together}|${o.rank}|**${o.total}**|`));
+  if(st.length>1 && st[0].total===st[1].total)
+    L.push("", `_총점 동점 — 물꼬 수로 ${NAMES[st[0].p]} 승리_`);
+  L.push("");
+  L.push("## 최종 보드");
+  L.push("");
+  L.push("|칸|자리|배치 (왼쪽부터)|물꼬|결과|");
+  L.push("|---|---|---|---|---|");
+  S.defs.forEach(d => {
+    const cat = S.cats[d.id];
+    const seq = cat.dice.map(x => `${x.v}(${NAMES[x.p]})`).join(" · ") || "—";
+    const st2 = cat.dice.length >= d.cap ? (isComplete(cat) ? "완성" : "실패")
+                                         : `미완성 ${cat.dice.length}/${d.cap}`;
+    L.push(`|${d.name}|${d.cap}|${seq}|${cat.water===null?"—":NAMES[cat.water]}|${st2}|`);
+  });
+  L.push("");
+  L.push("## 완성 칸 정산 근거");
+  L.push("");
+  let any = false;
+  S.defs.forEach(d => {
+    const cat = S.cats[d.id];
+    if(!isComplete(cat)) return;
+    any = true;
+    const c = contributors(cat).map(p=>NAMES[p]).join(", ");
+    const w = rankWinner(cat);
+    L.push(`- **${d.name}** — 기여자 ${c}` +
+      (contributors(cat).length>=2 ? ` · 함께 각자 +${d.together}` : " · 혼자 완성이라 함께 없음") +
+      (d.rank ? (w>=0 ? ` · 으뜸 ${NAMES[w]} +${d.rank}` : " · 으뜸 동점 소멸") : " · 으뜸 없음"));
+  });
+  if(!any) L.push("- 완성된 칸이 없습니다.");
+  L.push("");
+  L.push("## 진행 기록");
+  L.push("");
+  S.log.forEach(e => {
+    if(e.t==="h") L.push("", `**${e.s}**`, "");
+    else if(e.t==="r") L.push("", `### ${e.s}`, "");
+    else L.push(`- ${e.s}`);
+  });
+  L.push("");
+  return L.join("\n");
+}
+
+function downloadLog(){
+  const txt = buildLog();
+  const d = new Date(), z = n => String(n).padStart(2,"0");
+  const name = `삼월만세전야_로그_${d.getFullYear()}${z(d.getMonth()+1)}${z(d.getDate())}_${z(d.getHours())}${z(d.getMinutes())}.md`;
+  const blob = new Blob([txt], {type:"text/markdown;charset=utf-8"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = name; a.click();
+  setTimeout(()=>URL.revokeObjectURL(url), 1500);
+}
+
+async function copyLog(){
+  try{ await navigator.clipboard.writeText(buildLog());
+       document.getElementById("btnCopy").textContent = "복사됨"; }
+  catch(e){ document.getElementById("btnCopy").textContent = "복사 실패"; }
+  setTimeout(()=>document.getElementById("btnCopy").textContent="복사", 1600);
+}
+
+/* ───────── 연결 ───────── */
+document.getElementById("btnUndo").onclick = undo;
+document.getElementById("btnPass").onclick = () => { if(S.current===0 && !S.gameOver) endTurn(); };
+document.getElementById("btnNew").onclick  = setupModal;
+document.getElementById("btnLog").onclick  = () => { if(S) downloadLog(); };
+document.getElementById("btnCopy").onclick = () => { if(S) copyLog(); };
+setupModal();
+</script>
+</body>
+</html>
