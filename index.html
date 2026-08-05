@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>삼월 만세 전야 — 1인 플레이 검증판 v9</title>
+<title>삼월 만세 전야 — 1인 플레이 검증판 v11</title>
 <style>
 :root{
   --ink:#1F1C18; --muted:#6A6259; --faint:#A79E92; --hair:#DDD6CB;
@@ -101,13 +101,15 @@ button.acc{background:var(--acc);color:#fff;border-color:var(--acc)}
 <header>
   <span class="hanja">三月萬歲前夜</span>
   <h1>삼월 만세 전야</h1>
-  <span class="ver">1인 플레이 검증판 v9 · 룰 v5.3</span>
+  <span class="ver">1인 플레이 검증판 v11 · 룰 v5.3</span>
 </header>
 
 <div class="bar">
   <span class="pill" id="pRound">라운드 —</span>
   <span class="pill" id="pStock">재고 —</span>
   <span class="pill" id="pTurn">—</span>
+  <span class="pill" id="pMode">—</span>
+  <span class="pill" id="pScore">—</span>
   <span class="grow"></span>
   <button id="btnUndo">되돌리기</button>
   <button id="btnPass">차례 넘기기</button>
@@ -150,6 +152,8 @@ const NAMES  = ["나","이웃 ㄴ","이웃 ㄷ","이웃 ㄹ","이웃 ㅁ"];
 const SEQ4 = [[1,2,3,4],[2,3,4,5],[3,4,5,6]];
 const SEQ5 = [[1,2,3,4,5],[2,3,4,5,6]];
 const AGGR = {0:{label:"소극적",w:0.15},1:{label:"균형",w:0.55},2:{label:"공격적",w:1.05}};
+const CMODE = {loose:{label:"느슨 (자리를 채우면 기여자)"}, strict:{label:"엄격 (완성을 이룬 눈만 기여자)"}};
+const SMODE = {flat:{label:"기본 (모든 주사위 개당 +1)"}, weighted:{label:"개정 (완성 칸 개당 +2 · 그 외 +1)"}};
 
 let S = null;
 let P = {k:0.40, water:0.5, fin:0.6, noise:0.15};   // AI 판단 계수
@@ -179,10 +183,10 @@ function aggrText(){
   return a.join(" · ");
 }
 
-function newState(pc, aggrs){
+function newState(pc, aggrs, contribMode, scoreMode){
   const three = (pc === 3);
   const st = {
-    pc, aggrs: aggrs.slice(),
+    pc, aggrs: aggrs.slice(), contribMode: contribMode || "loose", scoreMode: scoreMode || "flat",
     dicePer: three ? 13 : 11,
     rounds:  three ? 5  : 4,
     numberCap: three ? 4 : 5,
@@ -242,9 +246,28 @@ function somePlayerPair(cat){
 }
 function countMax(cat){ return valueCount(cat); }
 
-function contributors(cat){
+function contributorsLoose(cat){                       // A: 자리를 채운 사람 모두
   const set = new Set(cat.dice.map(x=>x.p));
   return [...set];
+}
+function contributorsStrict(cat){                      // B: 완성을 이룬 눈을 놓은 사람만
+  const d = cat.def;
+  if(d.kind==="num" || d.kind==="small" || d.kind==="large") return contributorsLoose(cat);
+  if(d.kind==="pair"){
+    const out = [];
+    for(let p=0;p<S.pc;p++) if(myVals(cat,p).length>=2) out.push(p);
+    return out;
+  }
+  const need = (d.kind==="triple") ? 3 : 5;              // 트리플 · 야찌
+  const counts = {};
+  cat.dice.forEach(x => counts[x.v] = (counts[x.v]||0)+1);
+  let compV = null;
+  Object.keys(counts).forEach(v => { if(counts[v] >= need) compV = +v; });
+  if(compV === null) return [];
+  return [...new Set(cat.dice.filter(x=>x.v===compV).map(x=>x.p))];
+}
+function contributors(cat){
+  return S.contribMode==="strict" ? contributorsStrict(cat) : contributorsLoose(cat);
 }
 
 function rankWinner(cat){
@@ -267,7 +290,8 @@ function score(){
   for(let p=0;p<S.pc;p++) out.push({p, fixed:0, water:0, together:0, rank:0, total:0});
   S.defs.forEach(d=>{
     const cat = S.cats[d.id];
-    cat.dice.forEach(x => out[x.p].fixed++);
+    const w = (S.scoreMode==="weighted" && isComplete(cat)) ? 2 : 1;
+    cat.dice.forEach(x => out[x.p].fixed += w);
     if(cat.water !== null) out[cat.water].water++;
     if(isComplete(cat)){
       const c = contributors(cat);
@@ -287,10 +311,12 @@ function standings(){                                   // 동점 → 물꼬 수
 }
 
 /* ───────── 진행 ───────── */
-function startGame(pc, aggrs){
-  S = newState(pc, aggrs);
+function startGame(pc, aggrs, contribMode, scoreMode){
+  S = newState(pc, aggrs, contribMode, scoreMode);
   S.log.push({t:"h", s:`${pc}인 게임 시작 · ${S.rounds}라운드 · 주사위 ${S.dicePer}개 · 숫자 칸 ${S.numberCap}자리`});
   S.log.push({t:"h", s:`컴퓨터 성향 — ${aggrText()}`});
+  S.log.push({t:"h", s:`기여자 판정 — ${CMODE[S.contribMode].label}`});
+  S.log.push({t:"h", s:`확정 점수 — ${SMODE[S.scoreMode].label}`});
   startRound();
 }
 
@@ -411,6 +437,7 @@ function potential(cat, p){
     if(!isComplete(cat)) return 0;
     let s = contributors(cat).length>=2 ? d.together : 0;
     if(rankWinner(cat) === p) s += d.rank;
+    if(S.scoreMode==="weighted") s += myVals(cat,p).length;   // 완성 칸 주사위 소급 +1씩
     return s;
   }
   const need = needLeft(cat);
@@ -424,6 +451,7 @@ function potential(cat, p){
     const mx = Math.max(...m);
     if(m[p]===mx && m.filter(x=>x===mx).length===1) share += d.rank;
   }
+  if(S.scoreMode==="weighted") share += myVals(cat,p).length;
   return chance * share;
 }
 
@@ -480,6 +508,8 @@ function render(){
   document.getElementById("pRound").textContent = `라운드 ${S.round} / ${S.rounds}`;
   document.getElementById("pStock").textContent = `내 재고 ${S.stocks[0]}개`;
   document.getElementById("pTurn").textContent  = S.gameOver ? "게임 종료" : `${NAMES[S.current]}의 차례`;
+  document.getElementById("pMode").textContent  = `기여자: ${S.contribMode==="strict"?"엄격":"느슨"}`;
+  document.getElementById("pScore").textContent = `확정: ${S.scoreMode==="weighted"?"개정":"기본"}`;
 
   const canMove = human && hasAnyMove(0, S.rolls[0], S.placed);
   document.getElementById("instruction").textContent = S.gameOver
@@ -609,7 +639,7 @@ function openModal(html){
 }
 function closeModal(){ document.getElementById("overlay").classList.remove("show"); render(); }
 
-let pick = {pc:4, aggrs:[1,1,1,1,1]};
+let pick = {pc:4, aggrs:[1,1,1,1,1], contribMode:"loose", scoreMode:"flat"};
 
 function setupHtml(){
   const rows = [];
@@ -636,6 +666,20 @@ function setupHtml(){
       <button style="font-size:11px;padding:2px 8px" onclick="presetMix()">섞기</button>
     </div>
     <div style="margin:8px 0 12px">${rows.join("")}</div>
+    <div><b style="font-size:13px">페어 · 트리플 · 야찌 기여자 판정</b></div>
+    <div class="opt" id="optMode">
+      <button data-v="loose" class="${pick.contribMode==="loose"?"on":""}">느슨</button>
+      <button data-v="strict" class="${pick.contribMode==="strict"?"on":""}">엄격</button>
+    </div>
+    <p class="note" style="margin-top:2px">느슨: 그 칸에 자기 주사위를 하나라도 놓으면 함께 보너스를 받습니다.<br>
+    엄격: 실제로 완성을 이룬 눈을 놓은 사람만 함께 보너스를 받습니다. 페어는 자기 눈으로 페어를 만든 사람만, 트리플 · 야찌는 완성시킨 눈을 놓은 사람만 해당합니다.</p>
+    <div><b style="font-size:13px">확정 점수</b></div>
+    <div class="opt" id="optScore">
+      <button data-v="flat" class="${pick.scoreMode==="flat"?"on":""}">기본</button>
+      <button data-v="weighted" class="${pick.scoreMode==="weighted"?"on":""}">개정</button>
+    </div>
+    <p class="note" style="margin-top:2px">기본: 보드에 놓인 주사위 개당 +1 (현행 룰 v5.3).<br>
+    개정: <b>완성된 칸</b> 의 주사위는 개당 +2, 미완성 칸과 실패한 칸의 주사위는 개당 +1. 확정 점수에 변별력을 주기 위한 실험안입니다.</p>
     <p class="note">성향은 상대의 이득을 얼마나 깎으려 드는지를 조절합니다. 괄호 안이 실제 계수입니다 — 소극적 ${AGGR[0].w} · 균형 ${AGGR[1].w} · 공격적 ${AGGR[2].w}.<br>
     3인은 주사위 13개 · 5라운드 · 숫자 칸 4자리, 4 - 5인은 11개 · 4라운드 · 숫자 칸 5자리로 진행됩니다.</p>
     <button class="acc" style="width:100%" onclick="begin()">시작</button>`;
@@ -650,10 +694,14 @@ function wireSetup(){
       const i = +b.parentNode.dataset.ai;
       pick.aggrs[i] = +b.dataset.v; refreshSetup();
     });
+  document.querySelectorAll("#optMode button").forEach(b =>
+    b.onclick = () => { pick.contribMode = b.dataset.v; refreshSetup(); });
+  document.querySelectorAll("#optScore button").forEach(b =>
+    b.onclick = () => { pick.scoreMode = b.dataset.v; refreshSetup(); });
 }
 function presetAll(v){ for(let i=1;i<5;i++) pick.aggrs[i] = v; refreshSetup(); }
 function presetMix(){ for(let i=1;i<5;i++) pick.aggrs[i] = (i-1) % 3; refreshSetup(); }
-function begin(){ closeModal(); startGame(pick.pc, pick.aggrs); }
+function begin(){ closeModal(); startGame(pick.pc, pick.aggrs, pick.contribMode, pick.scoreMode); }
 
 /* ───────── 로그 ───────── */
 function buildLog(){
@@ -665,7 +713,9 @@ function buildLog(){
   L.push(`- 인원: ${S.pc}인 · ${S.rounds}라운드 · 주사위 ${S.dicePer}개 · 숫자 칸 ${S.numberCap}자리`);
   L.push(`- 컴퓨터 성향: ${aggrText()}`);
   L.push(`- 견제 계수: 소극적 ${AGGR[0].w} · 균형 ${AGGR[1].w} · 공격적 ${AGGR[2].w}`);
-  L.push(`- 검증판 v9 (룰 v5.3)`);
+  L.push(`- 기여자 판정: ${CMODE[S.contribMode].label}`);
+  L.push(`- 확정 점수: ${SMODE[S.scoreMode].label}`);
+  L.push(`- 검증판 v11 (룰 v5.3 + 확정 점수 실험)`);
   L.push("");
   L.push("## 최종 순위");
   L.push("");
